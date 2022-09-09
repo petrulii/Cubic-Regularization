@@ -25,12 +25,13 @@ from scipy.optimize import newton
 from sympy import *
 import numpy as np
 import scipy.linalg
+import matplotlib.pyplot as plt
 from numpy import linalg as LA
 
 
 class Algorithm:
     def __init__(self, x0, f=None, gradient=None, hessian=None, L=None, L0=None, kappa_easy=0.0001, maxiter=10000,
-                 submaxiter=100000, conv_tol=1e-5, conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps)):
+                 submaxiter=100000, conv_tol=1e-5, conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps), aux_method="trust_region", verbose = 0):
         """
         Collect all the inputs to the cubic regularization algorithm.
         Required inputs: function or all of gradient and Hessian and L. If you choose conv_criterion='Nesterov', you
@@ -48,6 +49,8 @@ class Algorithm:
         :param conv_criterion: Criterion for convergence: 'gradient' or 'nesterov'. Gradient uses norm of gradient.
                                 Nesterov's uses max(sqrt(2/(L+M)norm(f'(x)), -2/(2L+M)lambda_min(f''(x))).
         :param epsilon: Value added/subtracted from x when approximating gradients and Hessians
+        :param aux_method: Method for solving the auxiliary problem
+        :param verbose: Display of additional solving information
         """
         self.f = f
         self.gradient = gradient
@@ -62,6 +65,9 @@ class Algorithm:
         self.L0 = L0
         self.kappa_easy = kappa_easy
         self.n = len(x0)
+
+        self.aux_method = aux_method
+        self.verbose = verbose
 
         self._check_inputs()
         # Estimate the gradient, hessian, and find a lower bound L0 for L if necessary
@@ -106,10 +112,12 @@ class Algorithm:
             except TypeError:
                 raise TypeError('x0 is not a valid input to the hessian. Is the hessian a function with input dimension '
                                 'length(x0)?')
-        if not (self.conv_criterion == 'gradient' or self.conv_criterion == 'nesterov'):
+        if not (self.conv_criterion == 'gradient' or self.conv_criterion == 'nesterov' or self.conv_criterion == 'decrement'):
             raise ValueError('Invalid input for convergence criterion')
         if self.conv_criterion == 'nesterov' and self.L is None:
             raise ValueError("With Nesterov's convergence criterion you must specify L")
+        if not (self.aux_method == "trust_region" or self.aux_method == "monotone_norm"):
+            raise ValueError("No such method for solving the auxiliary problem")
 
     @staticmethod
     def _std_basis(size, idx):
@@ -172,14 +180,31 @@ class Algorithm:
                 return True
             else:
                 return False
+        elif self.conv_criterion == 'decrement':
+            lambda_sq = np.matmul(np.matmul(self.grad_x.T, np.linalg.pinv(self.hess_x)), self.grad_x)
+            if lambda_sq * 1/2 <= self.conv_tol:
+                return True
+            else:
+                return False
 
 
 class CubicRegularization(Algorithm):
     def __init__(self, x0, f=None, gradient=None, hessian=None, L=None, L0=None, kappa_easy=0.0001, maxiter=10000,
-                 submaxiter=10000, conv_tol=1e-5, conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps)):
+                 submaxiter=10000, conv_tol=1e-5, conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps), aux_method="trust_region", verbose=0):
         Algorithm.__init__(self, x0, f=f, gradient=gradient, hessian=hessian, L=L, L0=L0, kappa_easy=kappa_easy,
                            maxiter=maxiter, submaxiter=submaxiter, conv_tol=conv_tol, conv_criterion=conv_criterion,
-                           epsilon=epsilon)
+                           epsilon=epsilon, aux_method=aux_method, verbose=verbose)
+
+        self.f_cubic = lambda x, y, mu: self.f(x) + np.matmul(self.grad_x.T,(y-x)) + 0.5*np.matmul((np.matmul(self.hess_x,(y-x))).T,(y-x)) + mu/6*(np.linalg.norm(y-x)**3)
+
+    def _cubic_approx(self, f_x, s, mk):
+        """
+        Compute the value of the cubic approximation to f at the proposed next point
+        :param f_x: Value of f(x) at current point x
+        :param s: Proposed step to take
+        :return: Value of the cubic approximation to f at the proposed next point
+        """
+        return f_x + np.matmul(self.grad_x.T,s) + 0.5*np.matmul((np.matmul(self.hess_x,s)).T,s) + mk/6*(np.linalg.norm(s)**3)
 
     def cubic_reg(self):
         """
@@ -198,6 +223,7 @@ class CubicRegularization(Algorithm):
             x_new, mk, flag = self._find_x_new(x_old, mk)
             self.grad_x = self.gradient(x_new)
             self.hess_x = self.hessian(x_new)
+            self.f_x = self.f(x_new)
             self.lambda_nplus, lambda_min = self._compute_lambda_nplus()
             converged = self._check_convergence(lambda_min, mk)
             if flag != 0:
@@ -216,172 +242,23 @@ class CubicRegularization(Algorithm):
         :return: x_new: New point
         :return: mk: New value of M_k
         """
-        if self.L is not None:
-            aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, self.L, self.lambda_nplus, self.kappa_easy,
-                                            self.submaxiter)
+        upper_approximation = False
+        iter = 0
+        f_xold = self.f(x_old)
+        while not upper_approximation and iter < self.submaxiter:
+            # If mk is too small s.t. the cubic approximation is not upper, multiply by sqrt(2).
+            mk *= 2
+            aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, mk, self.lambda_nplus, self.kappa_easy,
+                                            self.submaxiter, self.aux_method, self.verbose)
             s, flag = aux_problem.solve()
-            x_new = s+x_old
-            return x_new, self.L, flag
-        else:
-            decreased = False
-            iter = 0
-            f_xold = self.f(x_old)
-            try:
-                all_lambdas = LA.eigvals(self.hess_x)
-                all_lambdas[all_lambdas < 0] = 0.0000000001
-                all_lambdas[::-1].sort()
-                print("Eigenvalues of the hessian :", all_lambdas)
-            except:
-                raise RuntimeError("Failed to compute the eigenvalues of the hessian")
-            try:
-                H = Matrix(self.hess_x)
-                O, D = H.diagonalize()
-                print("Hessian matrix :")
-                print()
-                pprint(H)
-                print()
-                print("Orthogonal matrix O :")
-                print()
-                pprint(O)
-                print()
-                print("O^T O :")
-                print()
-                pprint(O.T*O)
-                print()
-                print("Diagonal D :")
-                print()
-                pprint(D)
-                print()
-                O = np.array(O, dtype=np.float64)
-            except:
-                raise RuntimeError("Failed to diagonalize the hessian")
-            (rows, cols) = shape(O)
-            if not isOrthogonal(O, rows, cols):
-                raise RuntimeError("Orthogonal diagonalization failure, O is not orthogonal")
-            while not decreased and iter < self.submaxiter:
-                # If mk is too small s.t. the cubic approximation is not upper, multiply by sqrt(2).
-                mk *= 2
-                aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, mk, self.lambda_nplus, self.kappa_easy,
-                                                self.submaxiter, solve_method="monotone_norm", n=self.n, O=O, lambd=all_lambdas)
-                # TODO: This returns a matrix instead of a vector :(
-                s, flag = aux_problem.solve()
-                x_new = s+x_old
-                print("x_old", x_old)
-                print("x_new", x_new)
-                decreased = (self.f(x_new) <= f_xold)
-                print("f(x_k)", self.f(x_new), "f(x_k-1)", f_xold)
-                iter += 1
-                if iter == self.submaxiter:
-                    raise RuntimeError('Could not find cubic upper approximation')
-            mk = max(0.5 * mk, self.L0)
-            return x_new, mk, flag
-
-
-class AdaptiveCubicReg(Algorithm):
-    def __init__(self, x0, f, gradient=None, hessian=None, L=None, L0=None, sigma0=1, eta1=0.1, eta2=0.9,
-                 kappa_easy=0.0001, maxiter=10000, submaxiter=10000, conv_tol=1e-5, hessian_update_method='exact',
-                 conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps)):
-        Algorithm.__init__(self, x0, f=f, gradient=gradient, hessian=hessian, L=sigma0/2, L0=L0, kappa_easy=kappa_easy,
-                           maxiter=maxiter, submaxiter=submaxiter, conv_tol=conv_tol, conv_criterion=conv_criterion,
-                           epsilon=epsilon)
-        self.sigma = sigma0
-        self.eta1 = eta1
-        self.eta2 = eta2
-        self.intermediate_points = [self.x0]
-        self.iter = 0
-        self.hessian_update_method= hessian_update_method.lower()
-
-    def _update_hess(self, x_new, grad_x_old, s, method='exact'):
-        """
-        Compute the (approximation) of the Hessian at the next point
-        :param x_new: Next point
-        :param grad_x_old: Gradient at old point
-        :param s: Step from old point to new point
-        :param method: Method to be used to update the Hessian. Choice: 'exact', 'broyden' (Powell-symmetric Broyden
-                        update), or 'rank_one' (Rank one symmetric update)
-        """
-        if method == 'exact':
-            self.hess_x = self.hessian(x_new)
-        else:
-            y = self.grad_x - grad_x_old
-            r = y - self.hess_x.dot(s)
-            if method == 'broyden':
-                self.hess_x += (np.outer(r, s)+np.outer(s, r))/np.dot(s, s)-np.dot(r, s)*np.outer(s, s)/(np.dot(s, s)**2)
-            elif method == 'rank_one':
-                if np.linalg.norm(r) != 0:
-                    self.hess_x += np.outer(r, r)/np.dot(r, s)
-            else:
-                raise NotImplementedError("Hessian update method'+method+'not implemented. Try 'exact', 'broyden', or "
-                                          "'rank_one'.")
-
-    def _m(self, f_x, s):
-        """
-        Compute the value of the cubic approximation to f at the proposed next point
-        :param f_x: Value of f(x) at current point x
-        :param s: Proposed step to take
-        :return: Value of the cubic approximation to f at the proposed next point
-        """
-        return f_x + s.dot(self.grad_x) + 0.5*s.dot(self.hess_x).dot(s) + 1/3*self.sigma*np.linalg.norm(s)**3
-
-    def _update_x_params(self, s, x_old, f_x):
-        """
-        Update x, the function value, gradient, and Hessian at x, and sigma
-        :param s: Proposed step to take
-        :param x_old: Current point
-        :param f_x: Function value at current point
-        :return: x_new: Next point
-        """
-        f_xnew = self.f(s+x_old)
-        rho = (f_x - f_xnew)/(f_x - self._m(f_x, s))
-        if rho >= self.eta1:
             x_new = x_old + s
-            grad_x_old = self.grad_x
-            self.f_x = f_xnew
-            self.grad_x = self.gradient(x_new)
-            self._update_hess(x_new, grad_x_old, s, method=self.hessian_update_method)
-            # If a very successful iteration, decrease sigma
-            if rho > self.eta2:
-                self.sigma = max(min(self.sigma, np.linalg.norm(self.grad_x)), self.epsilon)
-            self.intermediate_points.append(x_new)
-            self.iter += 1
-        else:
-            x_new = x_old
-            self.sigma *= 2
-        return x_new
-
-    def adaptive_cubic_reg(self):
-        """
-        Run the adaptive cubic regularization algorithm
-        :return: x_new: Final point
-        :return: self.intermediate_points: All points visited by the adaptive cubic regularization algorithm on the way to x_new
-        :return: self.iter: Number of iterations of adaptive cubic regularization
-        """
-        converged = False
-        x_new = self.x0
-        fail = flag = 0
-        while self.iter < self.maxiter and converged is False:
-            x_old = x_new.copy()
-            f_xold = self.f(x_old)
-            aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, 2*self.sigma, self.lambda_nplus,
-                                            self.kappa_easy, self.submaxiter)
-            s, flag = aux_problem.solve()
-            if flag == 0:
-                fail = 0
-                x_new = self._update_x_params(s, x_old, f_xold)
-                self.lambda_nplus, lambda_min = self._compute_lambda_nplus()
-                if np.linalg.norm(x_new-x_old) > 0:
-                    converged = self._check_convergence(lambda_min, 2*self.sigma)
-            elif fail == 0:
-                # When flag != 0, the Hessian is probably wrong. Update to the exact Hessian.
-                # Don't enter this part if it fails twice in a row since this won't help.
-                fail = 1
-                self.hess_x = self.hessian(x_old)
-                self.lambda_nplus, lambda_min = self._compute_lambda_nplus()
-            else:
-                print(RuntimeWarning('Convergence criteria not met, likely due to round-off error or ill-conditioned '
-                                     'Hessian.'))
-                return x_new, self.intermediate_points, self.iter, flag
-        return x_new, self.intermediate_points, self.iter, flag
+            cubic_approx = self._cubic_approx(self.f(x_old), s, mk)
+            upper_approximation = (cubic_approx >= self.f(x_new))
+            iter += 1
+            if iter == self.submaxiter:
+                raise RuntimeError('Could not find cubic upper approximation')
+        mk = max(0.5 * mk, self.L0)
+        return x_new, mk, flag
 
 
 class _AuxiliaryProblem:
@@ -389,7 +266,7 @@ class _AuxiliaryProblem:
     Solve the cubic subproblem as described in Conn et. al (2000) (see reference at top of file)
     The notation in this function follows that of the above reference.
     """
-    def __init__(self, x, gradient, hessian, M, lambda_nplus, kappa_easy, submaxiter, solve_method, n, O, lambd):
+    def __init__(self, x, gradient, hessian, M, lambda_nplus, kappa_easy, submaxiter, aux_method, verbose):
         """
         :param x: Current location of cubic regularization algorithm
         :param gradient: Gradient at current point
@@ -406,10 +283,8 @@ class _AuxiliaryProblem:
         self.lambda_nplus = lambda_nplus
         self.kappa_easy = kappa_easy
         self.maxiter = submaxiter
-        self.solve_method = solve_method
-        self.n = n
-        self.O = O
-        self.lambd = lambd
+        self.method = aux_method
+        self.verbose = verbose
 
     def _compute_s(self, lambduh):
         """
@@ -462,7 +337,7 @@ class _AuxiliaryProblem:
         Solve the cubic regularization subproblem.
         :return: s: Step for the cubic regularization algorithm
         """
-        if self.solve_method == "trust_region":
+        if self.method == "trust_region":
             """
             See algorithm 7.3.6 in Conn et al. (2000).
             """
@@ -499,38 +374,40 @@ class _AuxiliaryProblem:
                     return s, flag
                 if iter == self.maxiter:
                     print(RuntimeWarning('Warning: Could not compute s: maximum number of iterations reached'))
-        elif self.solve_method == "monotone_norm":
+        elif self.method == "monotone_norm":
             """
             Newton on a monotone function.
             """
-            eta = np.matmul(self.O,self.grad_x)
+            try:
+                eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
+                eigvals[eigvals <= 0] = 1.48e-08
+                eigvals[::-1].sort()
+                eigvals = eigvals.reshape((eigvals.shape[0], 1))
+            except:
+                raise RuntimeError("Failed to compute the eigenvalues of the hessian")
+            try:
+                O = np.column_stack(eigvecs)
+                I = np.matmul(O.T,O)
+                I[np.isclose(I, 0)] = 0
+            except:
+                raise RuntimeError("Failed to diagonalize the hessian")
+            assert (I.shape[0] == I.shape[1]) and np.allclose(I, np.eye(I.shape[0]))
+            eta = np.matmul(O,self.grad_x)
             # Monotone function to find the root of.
             f = lambda x, et, l, mu: np.linalg.norm(et/(l+3*mu*x))-x
-            #fder = lambda x: 3 * x**2
+            fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
             # Initial guess for Newton's method.
-            rng = np.random.default_rng()
-            x0 = rng.standard_normal(self.n)
-            # Find the root.
-            u = newton(f, x0, args=(eta, self.lambd, self.M), maxiter=100)
-            #u = newton(f, x0, fprime=fder, args=(eta, self.lambd), maxiter=10)
-            # Compute the step size.
-            t = np.matmul(self.O.T, u)
-            s = t + self.x
-        return s, 0
+            x0 = 1.0e-03
 
- 
-def isOrthogonal(a, m, n) :
-    if (m != n) :
-        return False
-    # Multiply A*A^t
-    for i in range(0, n) :
-        for j in range(0, n) :
-            sum = 0
-            for k in range(0, n) :
-                sum = sum + (a[i,k] * a[j,k])      
-        if (i == j and sum != 1) :
-            return False
-        if (i != j and sum > 0.00000001) :
-            return False
-    return True
+            # Find the root.
+            #(v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=100, full_output=true, tol=1.48e-05)
+            (v, r) = newton(f, x0, fprime=fder, args=(eta, eigvals, self.M), maxiter=200, full_output=true, tol=1.48e-05)
+            if self.verbose == 1:
+                print("Newton root :", r.root)
+                print("Newton iterations :", r.iterations)
+                print("Newton function calls :", r.function_calls)
+            u = -eta/(eigvals+3*self.M*v)
+            # Compute the step size.
+            s = np.matmul(O.T, u)
+        return s, 0
  

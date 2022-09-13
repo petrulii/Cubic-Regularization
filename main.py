@@ -4,91 +4,66 @@ import matplotlib.pyplot as plt
 import time
 from sklearn.metrics import mean_squared_error as mse
 
-# TODO
-# higher dimensions
-# step size evolution
-# condition matrices max/min
-# try star shaped function
-
-def sigmoid(x):
-    """ Sigmoid function. """
-    return 1./(1+np.exp(-x))
-
-def generate_data(nb_samples, nb_features, sigma=1, density=1):
-    """ Generate normally distributed data set. """
-    # Initialising the feature vector.
-    theta = np.random.randn(nb_features, 1)
-    # Generate random input.
-    x = np.random.randn(nb_samples,nb_features)
-    # Generate observations.
-    y = sigmoid(np.matmul(x,theta))
-    return x, y, theta
-
-def CheckGrad(f,gradf,x0):
-    """ Check the gradient using finite differences. """
-    d=np.random.rand(x0.shape[0])
-    epst = 1e-6
-    g       = gradf(x0)
-    vplus   = f(x0+epst*d)
-    vminus  = f(x0-epst*d)
-    # Directional derivative at x0 in direction d
-    print("Analytic gradient in direction d: ", np.dot(d,g))
-    # Finite differences test
-    print("Finite differences test in dir d: ", (vplus-vminus)/(2*epst))
-
-def CheckHess(f,Hessf,x0):
-    """ Check the Hessian using finite differences. """
-    d=np.random.rand(x0.shape[0])
-    epst = 1e-4
-    val     = f(x0)
-    vplus   = f(x0+epst*d)
-    vminus  = f(x0-epst*d)
-    H = Hessf(x0)
-    # Directional second derivative at x0 in direction d
-    print("Second derivative in direction d  : ", np.dot(H@d,d))
-    # Finite differences test
-    print("Finite differences second der test: ", (vplus+vminus-2*val)/(epst**2))
+def f(x):
+    n = len(x)
+    result = 0
+    for i in range(1,n):
+        result += (x[i]-x[i-1]*x[0])**2
+    for i in range(0,n):
+        for j in range(0,n):
+            result += (A[i,j]*x[i]*x[j]-c)**2
+    return result
 
 # To be able to replicate simulations.
-np.random.seed(1)
+np.random.seed(2)
 
-fig_name = "_LL"
-f = lambda th: sum(np.log(1 + np.exp(np.matmul(x,th))) - np.matmul(x,th)*y) * 1/n
-grad = lambda th: np.matmul(x.T, (sigmoid(np.matmul(x,th)) - y)) * 1/n
-hess = lambda th: np.dot(x.T, x) * np.diag(sigmoid(np.matmul(x,th))) * np.diag(1 - sigmoid(np.matmul(x,th))) * 1/n
-#print("True theta:", theta, "\n\nStarting point:", th0,"\n")
+# Initialize multiple dimensions for experiments
+nb_experiments = 10
+N = np.arange(3, 33, 2)
+nb_N = N.shape[0]
 
-nb_experiments = 3
-n = 1000
-M = np.array([5, 10, 50, 75])#, 100, 125, 150, 175])
-nb_M = M.shape[0]
-time_tr = np.zeros((nb_experiments,nb_M))
-time_mn = np.zeros((nb_experiments,nb_M))
-estim_error_tr = np.zeros((nb_experiments,nb_M))
-estim_error_mn = np.zeros((nb_experiments,nb_M))
-iters_tr = np.zeros((nb_experiments,nb_M))
-iters_mn = np.zeros((nb_experiments,nb_M))
+# For collecting experiment data and plotting
+fig_name = "polynomial"
+time_tr = np.zeros((nb_experiments,nb_N))
+time_mn = np.zeros((nb_experiments,nb_N))
+estim_error_tr = np.zeros((nb_experiments,nb_N))
+estim_error_mn = np.zeros((nb_experiments,nb_N))
+iters_tr = np.zeros((nb_experiments,nb_N))
+iters_mn = np.zeros((nb_experiments,nb_N))
 
 for i in range(nb_experiments):
-    for j in range(nb_M):
-        print("i,j:",i,j)
-        m = M[j]
-        x, y, theta = generate_data(n, m)
-        th0 = np.random.rand(m,1)
+    for j in range(nb_N):
+        n = N[j]
+        print("Experiment: ",i, ", n: ",n)
+        # Initial point for cubic regularization
+        x0 = np.ones(n)
+        # Hyper-parameter of the polynomial
+        a = np.random.randint(-10,10,size=(n,n))
+        A = (a + a.T)/2
+        c = 2
 
         start_time = time.time()
-        cr = utils.CubicRegularization(th0, f=f, gradient=grad, hessian=hess, conv_tol=1e-4, L0=0.00001, aux_method="trust_region", verbose=0, conv_criterion='decrement')
+        cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-4, L0=0.00001, aux_method="trust_region", verbose=1, conv_criterion='gradient')
         x_opt, intermediate_points, n_iter, flag = cr.cubic_reg()
+        print("\nTrust region\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
+        print("Argmin of f: ", x_opt) 
+        x_pows = np.power(np.ones(n)*x_opt[0], np.arange(1,n+1))
+        print("Power series: ", x_pows)
         time_tr[i,j] = time.time() - start_time
-        estim_error_tr[i,j] = mse(x_opt, theta)
+        estim_error_tr[i,j] = mse(x_opt, x_pows)
         iters_tr[i,j] = n_iter
 
-        start_time = time.time()
-        cr = utils.CubicRegularization(th0, f=f, gradient=grad, hessian=hess, conv_tol=1e-4, L0=0.00001, aux_method="monotone_norm", verbose=0, conv_criterion='decrement')
+        """start_time = time.time()
+        cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-4, L0=0.00001, aux_method="monotone_norm", verbose=0, conv_criterion='gradient')
         x_opt, intermediate_points, n_iter, flag = cr.cubic_reg()
+        print("\nMonotone norm\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
+        print("Argmin of f: ", x_opt) 
+        x_pows = np.power(np.ones(n)*x_opt[0], np.arange(1,n+1))
+        print("Power series: ", x_pows)
         time_mn[i,j] = time.time() - start_time
-        estim_error_mn[i,j] = mse(x_opt, theta)
-        iters_mn[i,j] = n_iter
+        estim_error_mn[i,j] = mse(x_opt, x_pows)
+        iters_mn[i,j] = n_iter"""
+
 
 time_tr = np.average(time_tr, axis=0)
 time_mn = np.average(time_mn, axis=0)
@@ -98,31 +73,32 @@ iters_tr = np.average(iters_tr, axis=0)
 iters_mn = np.average(iters_mn, axis=0)
 
 fig0, ax0 = plt.subplots()
-ax0.plot(M, time_tr, label="Trust region")
-ax0.plot(M, time_mn, label="Monotone norm")
-ax0.set_xlabel('Number of features')
+ax0.plot(N, time_tr, label="Trust region")
+#ax0.plot(N, time_mn, label="Monotone norm")
+ax0.set_xlabel('k')
 ax0.set_ylabel('Time')
 ax0.legend(loc='best')
-ax0.set_title("Time taken for different number of features m")
-plt.savefig("figures/time"+fig_name+".png", format="png")
+ax0.set_title("Time taken for different dimension k")
+plt.savefig("figures/time_"+fig_name+".png", format="png")
 
 fig1, ax1 = plt.subplots()
-ax1.plot(M, estim_error_tr, label="Trust region")
-ax1.plot(M, estim_error_mn, label="Monotone norm")
-ax1.set_xlabel('Number of features')
+ax1.plot(N, estim_error_tr, label="Trust region")
+#ax1.plot(N, estim_error_mn, label="Monotone norm")
+ax1.set_xlabel('k')
 ax1.set_ylabel('Estimation error')
 ax1.legend(loc='best')
-ax1.set_title("Accuraccy for different number of features m")
-plt.savefig("figures/accuracy"+fig_name+".png", format="png")
+ax1.set_title("Power series estimation error for different dimension k")
+plt.savefig("figures/error_"+fig_name+".png", format="png")
 
 fig2, ax2 = plt.subplots()
-ax2.plot(M, iters_tr, label="Trust region")
-ax2.plot(M, iters_mn, label="Monotone norm")
-ax2.set_xlabel('Number of features')
+ax2.plot(N, iters_tr, label="Trust region")
+#ax2.plot(N, iters_mn, label="Monotone norm")
+ax2.set_xlabel('k')
 ax2.set_ylabel('Iterations')
 ax2.legend(loc='best')
-ax2.set_title("Iterations for different number of features m")
-plt.savefig("figures/iterations"+fig_name+".png", format="png")
+ax2.set_title("Iterations for different dimension k")
+plt.savefig("figures/iterations_"+fig_name+".png", format="png")
+
 
 """
 f_first = lambda th, y: f(th) + np.dot(grad(th), y-th)

@@ -1,12 +1,9 @@
 """
-This module implements cubic regularization of Newton's method, as described in Nesterov and Polyak (2006) and also
-the adaptive cubic regularization algorithm described in Cartis et al. (2011). This code solves the cubic subproblem
-according to slight modifications of Algorithm 7.3.6 of Conn et. al (2000). Cubic regularization solves unconstrained
-minimization problems by minimizing a cubic upper bound to the function at each iteration.
+This module implements cubic regularization of Newton's method, as described in Nesterov and Polyak (2006). This code solves the cubic subproblem
+according to slight modifications of Algorithm 7.3.6 of Conn et. al (2000) or by finding a root of a monotone-like function using the Newton's method.
+Cubic regularization solves unconstrained minimization problems by minimizing a cubic upper bound of the function at each iteration.
 
-Implementation by Corinne Jones
-cjones6@uw.edu
-June 2016
+Original implementation by Corinne Jones, modified and the second method for the subproblem added by Ieva Petrulionyte
 
 References:
 - Nesterov, Y., & Polyak, B. T. (2006). Cubic regularization of Newton method and its global performance.
@@ -18,15 +15,9 @@ References:
   method. SIAM Journal on Optimization, 9(2), 504-525.
 """
 
-from __future__ import division
-#from utils import isOrthogonal
-from matplotlib.pyplot import switch_backend
 from scipy.optimize import newton
-from sympy import *
 import numpy as np
 import scipy.linalg
-import matplotlib.pyplot as plt
-from numpy import linalg as LA
 
 
 class Algorithm:
@@ -34,20 +25,17 @@ class Algorithm:
                  submaxiter=100000, conv_tol=1e-5, conv_criterion='gradient', epsilon=2*np.sqrt(np.finfo(float).eps), aux_method="trust_region", verbose = 0):
         """
         Collect all the inputs to the cubic regularization algorithm.
-        Required inputs: function or all of gradient and Hessian and L. If you choose conv_criterion='Nesterov', you
-        must also supply L.
+        Required inputs: function to be solved.
         :param x0: Starting point for cubic regularization algorithm
         :param f: Function to be minimized
         :param gradient: Gradient of f (input as a function that returns a numpy array)
         :param hessian: Hessian of f (input as a function that returns a numpy array)
-        :param L: Lipschitz constant on the Hessian
         :param L0: Starting point for line search for M
-        :param kappa_easy: Convergence tolerance for the cubic subproblem
+        :param kappa_easy: Convergence tolerance for the trust-region subproblem
         :param maxiter: Maximum number of cubic regularization iterations
         :param submaxiter: Maximum number of iterations for the cubic subproblem
         :param conv_tol: Convergence tolerance
-        :param conv_criterion: Criterion for convergence: 'gradient' or 'nesterov'. Gradient uses norm of gradient.
-                                Nesterov's uses max(sqrt(2/(L+M)norm(f'(x)), -2/(2L+M)lambda_min(f''(x))).
+        :param conv_criterion: Criterion for convergence: 'gradient' or 'decrement', 'gradient' uses norm of gradient
         :param epsilon: Value added/subtracted from x when approximating gradients and Hessians
         :param aux_method: Method for solving the auxiliary problem
         :param verbose: Display of additional solving information
@@ -61,7 +49,6 @@ class Algorithm:
         self.conv_tol = conv_tol
         self.conv_criterion = conv_criterion.lower()
         self.epsilon = epsilon
-        self.L = L
         self.L0 = L0
         self.kappa_easy = kappa_easy
         self.n = len(x0)
@@ -90,10 +77,9 @@ class Algorithm:
             raise TypeError('Invalid input type for x0')
         if len(self.x0) < 1:
             raise ValueError('x0 must have length > 0')
-        if not (self.f is not None or (self.gradient is not None and self.hessian is not None and self.L is not None)):
+        if not (self.f is not None or (self.gradient is not None and self.hessian is not None)):
             raise AttributeError('You must specify f and/or each of the following: gradient, hessian, and L')
-        if not((not self.L or self.L > 0)and (not self.L0 or self.L0 > 0) and self.kappa_easy > 0 and self.maxiter > 0
-               and self.conv_tol > 0 and self.epsilon > 0):
+        if not((not self.L0 or self.L0 > 0) and self.kappa_easy > 0 and self.maxiter > 0 and self.conv_tol > 0 and self.epsilon > 0):
             raise ValueError('All inputs that are constants must be larger than 0')
         if self.f is not None:
             try:
@@ -112,10 +98,8 @@ class Algorithm:
             except TypeError:
                 raise TypeError('x0 is not a valid input to the hessian. Is the hessian a function with input dimension '
                                 'length(x0)?')
-        if not (self.conv_criterion == 'gradient' or self.conv_criterion == 'nesterov' or self.conv_criterion == 'decrement'):
+        if not (self.conv_criterion == 'gradient' or self.conv_criterion == 'decrement'):
             raise ValueError('Invalid input for convergence criterion')
-        if self.conv_criterion == 'nesterov' and self.L is None:
-            raise ValueError("With Nesterov's convergence criterion you must specify L")
         if not (self.aux_method == "trust_region" or self.aux_method == "monotone_norm"):
             raise ValueError("No such method for solving the auxiliary problem")
 
@@ -172,11 +156,6 @@ class Algorithm:
         """
         if self.conv_criterion == 'gradient':
             if np.linalg.norm(self.grad_x) <= self.conv_tol:
-                return True
-            else:
-                return False
-        elif self.conv_criterion == 'nesterov':
-            if max(np.sqrt(2/(self.L+M)*np.linalg.norm(self.grad_x)), -2/(2*self.L+M)*lambda_min) <= self.conv_tol:
                 return True
             else:
                 return False
@@ -244,10 +223,12 @@ class CubicRegularization(Algorithm):
         """
         upper_approximation = False
         iter = 0
-        f_xold = self.f(x_old)
+        mk = max(0.5 * mk, self.L0)
         while not upper_approximation and iter < self.submaxiter:
             # If mk is too small s.t. the cubic approximation is not upper, multiply by sqrt(2).
-            mk *= 2
+            if iter != 0:
+                mk *= 2
+            #print("mk: ", mk, ", iter: ", iter)
             aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, mk, self.lambda_nplus, self.kappa_easy,
                                             self.submaxiter, self.aux_method, self.verbose)
             s, flag = aux_problem.solve()
@@ -257,7 +238,6 @@ class CubicRegularization(Algorithm):
             iter += 1
             if iter == self.submaxiter:
                 raise RuntimeError('Could not find cubic upper approximation')
-        mk = max(0.5 * mk, self.L0)
         return x_new, mk, flag
 
 
@@ -274,7 +254,7 @@ class _AuxiliaryProblem:
         :param M: Current value used for M in cubic upper approximation to f at x_new
         :param lambda_nplus: max(-1*smallest eigenvalue of hessian of f at x, 0)
         :param kappa_easy: Convergence tolerance
-        :param solve_method: Convergence tolerance
+        :param aux_method: Method to be used to solve the auxiliary problem
         """
         self.x = x
         self.grad_x = gradient
@@ -378,36 +358,49 @@ class _AuxiliaryProblem:
             """
             Newton on a monotone function.
             """
+            # Compute the eigenvalues and the eigenvectors of the Hessian
             try:
                 eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
-                eigvals[eigvals <= 0] = 1.48e-08
-                eigvals[::-1].sort()
-                eigvals = eigvals.reshape((eigvals.shape[0], 1))
+                eigvals = np.where(eigvals<0, 1.0e-08, eigvals)
             except:
                 raise RuntimeError("Failed to compute the eigenvalues of the hessian")
+            # Diagonalize the Hessian
             try:
                 O = np.column_stack(eigvecs)
                 I = np.matmul(O.T,O)
                 I[np.isclose(I, 0)] = 0
             except:
                 raise RuntimeError("Failed to diagonalize the hessian")
+            # Diagonalization check
             assert (I.shape[0] == I.shape[1]) and np.allclose(I, np.eye(I.shape[0]))
-            eta = np.matmul(O,self.grad_x)
-            # Monotone function to find the root of.
-            f = lambda x, et, l, mu: np.linalg.norm(et/(l+3*mu*x))-x
-            fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
-            # Initial guess for Newton's method.
-            x0 = 1.0e-03
 
-            # Find the root.
-            #(v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=100, full_output=true, tol=1.48e-05)
-            (v, r) = newton(f, x0, fprime=fder, args=(eta, eigvals, self.M), maxiter=200, full_output=true, tol=1.48e-05)
-            if self.verbose == 1:
-                print("Newton root :", r.root)
-                print("Newton iterations :", r.iterations)
-                print("Newton function calls :", r.function_calls)
-            u = -eta/(eigvals+3*self.M*v)
-            # Compute the step size.
-            s = np.matmul(O.T, u)
+            # Solve the auxiliary one-dimensional problem
+            eta = np.matmul(O,self.grad_x)
+            # If not at a stationary point, solve the auxiliary problem
+            if not np.all(np.isclose(eta, 0)):
+                # Monotone function to solve.
+                #print("eigvals:", eigvals, ", M:", self.M)
+                f = lambda x, et, l, mu: np.linalg.norm(et/(l+3*mu*x))-x
+                #fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
+                # Initial guess for Newton's method.
+                x0 = max((-1*np.min(eigvals))/(3*self.M)+1.0e-04,1.0e-04)
+                (v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=self.maxiter, full_output=True, tol=1.48e-08)
+                if self.verbose == 1:
+                    print("Newton root :", r.root)
+                    print("Newton iterations :", r.iterations)
+                    print("Newton function calls :", r.function_calls)
+                u = -eta/(eigvals+3*self.M*v)
+                # Compute the step size.
+                s = np.matmul(O.T, u)
+            # Classify the stationary point w.r.t. second order optimality condition.
+            else:
+                # Undefined, stay at the current point
+                if np.all(np.isclose(eigvals, 0)):
+                    s = eta
+                # Minimum, stay at the current point
+                elif np.all(eigvals > 0):
+                    s = eta
+                # Maximum or saddle point, move to the descent direction
+                else:
+                    s = eigvecs[0]
         return s, 0
- 

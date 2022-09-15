@@ -98,7 +98,7 @@ class Algorithm:
             except TypeError:
                 raise TypeError('x0 is not a valid input to the hessian. Is the hessian a function with input dimension '
                                 'length(x0)?')
-        if not (self.conv_criterion == 'gradient' or self.conv_criterion == 'decrement'):
+        if not (self.conv_criterion == 'function' or self.conv_criterion == 'gradient' or self.conv_criterion == 'decrement'):
             raise ValueError('Invalid input for convergence criterion')
         if not (self.aux_method == "trust_region" or self.aux_method == "monotone_norm"):
             raise ValueError("No such method for solving the auxiliary problem")
@@ -147,14 +147,19 @@ class Algorithm:
         lambda_n = scipy.linalg.eigh(self.hess_x, eigvals_only=True, eigvals=(0, 0))
         return max(-lambda_n[0], 0), lambda_n
 
-    def _check_convergence(self, lambda_min, M):
+    def _check_convergence(self, x_old, x_new):
         """
         Check whether the cubic regularization algorithm has converged
         :param lambda_min: Minimum eigenvalue at current point
         :param M: Current value used for M in cubic upper approximation to f at x_new
         :return: True/False depending on whether the convergence criterion has been satisfied
         """
-        if self.conv_criterion == 'gradient':
+        if self.conv_criterion == 'function':
+            if self.f(x_new) > self.f(x_old):
+                return True
+            else:
+                return False
+        elif self.conv_criterion == 'gradient':
             if np.linalg.norm(self.grad_x) <= self.conv_tol:
                 return True
             else:
@@ -203,14 +208,19 @@ class CubicRegularization(Algorithm):
             self.grad_x = self.gradient(x_new)
             self.hess_x = self.hessian(x_new)
             self.f_x = self.f(x_new)
-            self.lambda_nplus, lambda_min = self._compute_lambda_nplus()
-            converged = self._check_convergence(lambda_min, mk)
+            converged = self._check_convergence(x_old, x_new)
             if flag != 0:
                 print(RuntimeWarning('Convergence criteria not met, likely due to round-off error or ill-conditioned '
                                      'Hessian.'))
                 return x_new, intermediate_points, iter, flag
             intermediate_points.append(x_new)
             iter += 1
+        eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
+        if not (np.all(eigvals>=0)):
+            print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point.'))
+            print("Hessian: \n", self.hess_x)
+            print("Gradient: \n", self.grad_x)
+            print("Eigenvalues:", eigvals)
         return x_new, intermediate_points, iter, flag
 
     def _find_x_new(self, x_old, mk):
@@ -361,7 +371,7 @@ class _AuxiliaryProblem:
             # Compute the eigenvalues and the eigenvectors of the Hessian
             try:
                 eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
-                eigvals = np.where(eigvals<0, 1.0e-08, eigvals)
+                #eigvals = np.where(eigvals==0, 1.0e-08, eigvals)
             except:
                 raise RuntimeError("Failed to compute the eigenvalues of the hessian")
             # Diagonalize the Hessian
@@ -394,11 +404,8 @@ class _AuxiliaryProblem:
                 s = np.matmul(O.T, u)
             # Classify the stationary point w.r.t. second order optimality condition.
             else:
-                # Undefined, stay at the current point
-                if np.all(np.isclose(eigvals, 0)):
-                    s = eta
-                # Minimum, stay at the current point
-                elif np.all(eigvals > 0):
+                # Undefined or local minimum, stay at the current point
+                if np.all(np.isclose(eigvals, 0, 1.0e-08)) or np.all(eigvals>0):
                     s = eta
                 # Maximum or saddle point, move to the descent direction
                 else:

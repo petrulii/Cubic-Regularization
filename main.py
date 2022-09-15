@@ -14,16 +14,41 @@ def f(x):
             result += (A[i,j]*x[i]*x[j]-c)**2
     return result
 
-# To be able to replicate simulations.
-np.random.seed(2)
+np.random.seed(0)
 
+# Hyper-parameter of the polynomial
+n = 5
+a = np.random.uniform(-1,1,size=(n,n))
+A = (a + a.T)/2
+A[n-1, n-1] = 0
+c = 20
+x0 = np.random.uniform(-1,1,size=n)
+
+nb_minima = 30
+minima = np.zeros(nb_minima)
+
+dom_range = 1.e2
+for i in range(nb_minima):
+    #x0 = np.ones(n)
+    x0 = np.random.randint(-dom_range,dom_range,size=(n,))
+    cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-8, L0=0.00001, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
+    x_opt, intermediate_points, n_iter, flag = cr.cubic_reg()
+    f_x_opt = f(x_opt)
+    print("Iterations:", n_iter, ", argmin of f:", x_opt, "i:", i)
+    minima[i] = f(x_opt)
+
+print("Local minima:", minima)
+print("Number of local minima found:", len(np.unique(minima)))
+print("Best local minimum:", np.min(minima))
+
+"""
 # Initialize multiple dimensions for experiments
 nb_experiments = 10
-N = np.arange(3, 33, 2)
+N = np.arange(3, 11, 2)
 nb_N = N.shape[0]
 
 # For collecting experiment data and plotting
-fig_name = "polynomial"
+fig_name = "polynomial_tust_region"
 time_tr = np.zeros((nb_experiments,nb_N))
 time_mn = np.zeros((nb_experiments,nb_N))
 estim_error_tr = np.zeros((nb_experiments,nb_N))
@@ -36,11 +61,14 @@ for i in range(nb_experiments):
         n = N[j]
         print("Experiment: ",i, ", n: ",n)
         # Initial point for cubic regularization
-        x0 = np.ones(n)
+        x0 = np.zeros(n)
+        #x0 = np.random.randint(-10,10,size=(n,))
         # Hyper-parameter of the polynomial
         a = np.random.randint(-10,10,size=(n,n))
         A = (a + a.T)/2
-        c = 2
+        A[n-1, n-1] = 0
+        print(A)
+        c = 20
 
         start_time = time.time()
         cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-4, L0=0.00001, aux_method="trust_region", verbose=1, conv_criterion='gradient')
@@ -50,10 +78,10 @@ for i in range(nb_experiments):
         x_pows = np.power(np.ones(n)*x_opt[0], np.arange(1,n+1))
         print("Power series: ", x_pows)
         time_tr[i,j] = time.time() - start_time
-        estim_error_tr[i,j] = mse(x_opt, x_pows)
+        estim_error_tr[i,j] = f(x_opt)
         iters_tr[i,j] = n_iter
 
-        """start_time = time.time()
+        start_time = time.time()
         cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-4, L0=0.00001, aux_method="monotone_norm", verbose=0, conv_criterion='gradient')
         x_opt, intermediate_points, n_iter, flag = cr.cubic_reg()
         print("\nMonotone norm\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
@@ -61,8 +89,8 @@ for i in range(nb_experiments):
         x_pows = np.power(np.ones(n)*x_opt[0], np.arange(1,n+1))
         print("Power series: ", x_pows)
         time_mn[i,j] = time.time() - start_time
-        estim_error_mn[i,j] = mse(x_opt, x_pows)
-        iters_mn[i,j] = n_iter"""
+        estim_error_mn[i,j] = f(x_opt)
+        iters_mn[i,j] = n_iter
 
 
 time_tr = np.average(time_tr, axis=0)
@@ -98,7 +126,7 @@ ax2.set_ylabel('Iterations')
 ax2.legend(loc='best')
 ax2.set_title("Iterations for different dimension k")
 plt.savefig("figures/iterations_"+fig_name+".png", format="png")
-
+"""
 
 """
 f_first = lambda th, y: f(th) + np.dot(grad(th), y-th)

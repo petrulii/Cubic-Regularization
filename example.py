@@ -7,6 +7,22 @@ from scipy.optimize import rosen_hess as banana_hess
 
 import src.cubic_reg
 
+n = 2
+a = np.random.uniform(-1,1,size=(n,n))
+A = (a + a.T)/2
+#A = np.array([[1.,-3.],[-3., 0.]])
+c = 10
+
+def n_polynomial(x):
+    n = len(x)
+    result = 0
+    for i in range(1,n):
+        result += (x[i]-x[i-1]*x[0])**2
+    for i in range(0,n):
+        for j in range(0,n):
+            result += (A[i,j]*x[i]*x[j]-c)**2
+    return result
+
 def Ackley(x):
     """
     Ackley function, description can be found here: https://en.wikipedia.org/wiki/Test_functions_for_optimization
@@ -69,20 +85,17 @@ class Function:
             self.plot_y_lim = 2
             self.plot_nb_contours = 40
         elif function == 'polynomial':
-            n = 2
-            a = np.random.random_integers(-100,100,size=(n,n))
-            A = (a + a.T)/2
-            c = 2
-            self.f = lambda x: (x[1]-x[0]**2)**2+(A[0,0]*x[0]*x[0]-c)**2+(A[0,1]*x[0]*x[1]-c)**2+(A[1,0]*x[1]*x[0]-c)**2+(A[1,1]*x[1]*x[1]-c)**2
+            self.f = lambda x: n_polynomial(x)
             self.grad = None
             self.hess = None
             self.x0 = np.array([1.5, 1])
-            self.plot_x_lim = 10
-            self.plot_y_lim = 10
-            self.plot_nb_contours = 50
+            self.plot_x_lim = 2.5
+            self.plot_y_lim = 2.5
+            self.plot_nb_contours = 70
+            print('A:', A)
         else:
             raise TypeError('Invalid input type for function initialization')
-        self.cr = src.cubic_reg.CubicRegularization(self.x0, f=self.f, gradient=self.grad, hessian=self.hess, conv_tol=1e-4,
+        self.cr = src.cubic_reg.CubicRegularization(self.x0, f=self.f, gradient=self.grad, hessian=self.hess, maxiter=10000, conv_tol=1e-8,
                                                     L0=1.e-05, aux_method=aux_method, verbose=0, conv_criterion='gradient')
 
     def run(self):
@@ -90,6 +103,7 @@ class Function:
         Solve the cubic regularization problem
         """
         x_opt, intermediate_points, n_iter, flag = self.cr.cubic_reg()
+        print('Value of function:', self.f(x_opt))
         return x_opt, intermediate_points, n_iter
 
     def plot_points(self, intermediate_points):

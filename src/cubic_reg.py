@@ -202,11 +202,13 @@ class CubicRegularization(Algorithm):
         x_new = self.x0
         mk = self.L0
         intermediate_points = [x_new]
+        intermediate_hess_cond = []
         while iter < self.maxiter and converged is False:
             x_old = x_new.copy()
-            x_new, mk, flag = self._find_x_new(x_old, mk)
+            x_new, mk, flag, hess_cond = self._find_x_new(x_old, mk, iter)
             self.grad_x = self.gradient(x_new)
             self.hess_x = self.hessian(x_new)
+            intermediate_hess_cond.append(hess_cond)
             self.f_x = self.f(x_new)
             converged = self._check_convergence(x_old, x_new)
             if flag != 0:
@@ -220,10 +222,18 @@ class CubicRegularization(Algorithm):
             print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point.'))
             print("Hessian: \n", self.hess_x)
             print("Gradient: \n", self.grad_x)
-            print("Eigenvalues:", eigvals)
-        return x_new, intermediate_points, iter, flag
+            print("Eigenvalues: \n", eigvals)
+            print("Eigenvectors: \n", eigvecs)
+            O = np.column_stack(eigvecs)
+            I = np.matmul(O.T,O)
+            I[np.isclose(I, 0)] = 0
+            print("O: \n", O)
+            print("I: \n", I)
+            eta = np.matmul(O,self.grad_x)
+            print("Eta: \n", eta)
+        return x_new, intermediate_points, iter, flag, intermediate_hess_cond
 
-    def _find_x_new(self, x_old, mk):
+    def _find_x_new(self, x_old, mk, iter):
         """
         Determine what M_k should be and compute the next point for the cubic regularization algorithm
         :param x_old: Previous point
@@ -241,14 +251,20 @@ class CubicRegularization(Algorithm):
             #print("mk: ", mk, ", iter: ", iter)
             aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, mk, self.lambda_nplus, self.kappa_easy,
                                             self.submaxiter, self.aux_method, self.verbose)
-            s, flag = aux_problem.solve()
+            s, flag, hess_cond = aux_problem.solve()
+            """if iter > 5000:
+                s = s*1e4
+            elif iter > 8000:
+                s = s*1e6
+            elif iter > 9000:
+                s = s*1e10"""
             x_new = x_old + s
             cubic_approx = self._cubic_approx(self.f(x_old), s, mk)
             upper_approximation = (cubic_approx >= self.f(x_new))
             iter += 1
             if iter == self.submaxiter:
                 raise RuntimeError('Could not find cubic upper approximation')
-        return x_new, mk, flag
+        return x_new, mk, flag, hess_cond
 
 
 class _AuxiliaryProblem:
@@ -364,6 +380,7 @@ class _AuxiliaryProblem:
                     return s, flag
                 if iter == self.maxiter:
                     print(RuntimeWarning('Warning: Could not compute s: maximum number of iterations reached'))
+            hess_cond = -1
         elif self.method == "monotone_norm":
             """
             Newton on a monotone function.
@@ -371,7 +388,10 @@ class _AuxiliaryProblem:
             # Compute the eigenvalues and the eigenvectors of the Hessian
             try:
                 eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
-                #eigvals = np.where(eigvals==0, 1.0e-08, eigvals)
+                eigvals_min = eigvals[0]
+                eigvals = np.where(eigvals<=0, 1.0e-08, eigvals)
+                hess_cond = eigvals[-1]/eigvals[0]
+                #print("Eigenvalues :", eigvals)
             except:
                 raise RuntimeError("Failed to compute the eigenvalues of the hessian")
             # Diagonalize the Hessian
@@ -394,7 +414,7 @@ class _AuxiliaryProblem:
                 #fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
                 # Initial guess for Newton's method.
                 x0 = max((-1*np.min(eigvals))/(3*self.M)+1.0e-04,1.0e-04)
-                (v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=self.maxiter, full_output=True, tol=1.48e-08)
+                (v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=self.maxiter, full_output=True, tol=1.48e-6)
                 if self.verbose == 1:
                     print("Newton root :", r.root)
                     print("Newton iterations :", r.iterations)
@@ -404,10 +424,10 @@ class _AuxiliaryProblem:
                 s = np.matmul(O.T, u)
             # Classify the stationary point w.r.t. second order optimality condition.
             else:
-                # Undefined or local minimum, stay at the current point
-                if np.all(np.isclose(eigvals, 0, 1.0e-08)) or np.all(eigvals>0):
-                    s = eta
                 # Maximum or saddle point, move to the descent direction
-                else:
+                if eigvals_min < 0:
                     s = eigvecs[0]
-        return s, 0
+                # Undefined or local minimum, stay at the current point
+                else:
+                    s = eta
+        return s, 0, hess_cond

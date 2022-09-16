@@ -7,10 +7,12 @@ from scipy.optimize import rosen_hess as banana_hess
 
 import src.cubic_reg
 
+#np.random.seed(0)
+
 n = 2
 a = np.random.uniform(-1,1,size=(n,n))
 A = (a + a.T)/2
-#A = np.array([[1.,-3.],[-3., 0.]])
+#[[0.09762701, 0.31795274], [0.31795274, 0.08976637]]
 c = 10
 
 def n_polynomial(x):
@@ -88,9 +90,9 @@ class Function:
             self.f = lambda x: n_polynomial(x)
             self.grad = None
             self.hess = None
-            self.x0 = np.array([1.5, 1])
-            self.plot_x_lim = 2.5
-            self.plot_y_lim = 2.5
+            self.x0 = np.random.uniform(-0.1,0.1,(n,))
+            self.plot_x_lim = 8
+            self.plot_y_lim = 8
             self.plot_nb_contours = 70
             print('A:', A)
         else:
@@ -102,7 +104,7 @@ class Function:
         """
         Solve the cubic regularization problem
         """
-        x_opt, intermediate_points, n_iter, flag = self.cr.cubic_reg()
+        x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = self.cr.cubic_reg()
         print('Value of function:', self.f(x_opt))
         return x_opt, intermediate_points, n_iter
 

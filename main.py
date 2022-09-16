@@ -17,29 +17,34 @@ def f(x):
 np.random.seed(0)
 
 # Hyper-parameter of the polynomial
-n = 5
+n = 3
 a = np.random.uniform(-1,1,size=(n,n))
 A = (a + a.T)/2
 A[n-1, n-1] = 0
-c = 20
-x0 = np.random.uniform(-1,1,size=n)
+c = 2
+print("A:", A)
 
-nb_minima = 30
+nb_minima = 10
 minima = np.zeros(nb_minima)
 
-dom_range = 1.e2
 for i in range(nb_minima):
-    #x0 = np.ones(n)
-    x0 = np.random.randint(-dom_range,dom_range,size=(n,))
-    cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-8, L0=0.00001, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
-    x_opt, intermediate_points, n_iter, flag = cr.cubic_reg()
+    x0 = np.random.uniform(-10,10,(n,))
+    cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-10, L0=1e-4, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
+    x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = cr.cubic_reg()
     f_x_opt = f(x_opt)
-    print("Iterations:", n_iter, ", argmin of f:", x_opt, "i:", i)
+    print("Iterations:", n_iter, ", argmin of f:", x_opt, ", i:", i)
     minima[i] = f(x_opt)
 
 print("Local minima:", minima)
-print("Number of local minima found:", len(np.unique(minima)))
+minima = np.around(minima, decimals=1)
+print("\nNumber of local minima found:", len(np.unique(minima)))
 print("Best local minimum:", np.min(minima))
+
+k = min(n_iter, 1000)
+X = np.arange(0, k, 1)
+plt.figure()
+plt.plot(X, intermediate_hess_cond[0:k])
+plt.show()
 
 """
 # Initialize multiple dimensions for experiments

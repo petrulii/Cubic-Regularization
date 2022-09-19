@@ -1,33 +1,36 @@
+import src.cubic_reg as cubic_reg
 import matplotlib.pyplot as plt
 import numpy as np
-
 from scipy.optimize import rosen as banana_f
 from scipy.optimize import rosen_der as banana_grad
 from scipy.optimize import rosen_hess as banana_hess
 
-import src.cubic_reg
-
-#np.random.seed(0)
-
+# Global variables for the quadratic objective
+global n
 n = 2
-a = np.random.uniform(-1,1,size=(n,n))
+a = np.random.uniform(-10,10,size=(n,n))
+global A
 A = (a + a.T)/2
-#[[0.09762701, 0.31795274], [0.31795274, 0.08976637]]
-c = 10
+global c
+c = np.random.uniform(-10,10)
 
-def n_polynomial(x):
+def polynomial(x):
+    """
+    A quadratic objective with quadratic constraints.
+    """
     n = len(x)
-    result = 0
+    term1 = 0
+    term2 = 0
     for i in range(1,n):
-        result += (x[i]-x[i-1]*x[0])**2
+        term1 += (x[i]-x[i-1]*x[0])**2
     for i in range(0,n):
         for j in range(0,n):
-            result += (A[i,j]*x[i]*x[j]-c)**2
-    return result
+            term2 += (A[i,j]*x[i]*x[j]-c)**2
+    return term1+term2**2
 
 def Ackley(x):
     """
-    Ackley function, description can be found here: https://en.wikipedia.org/wiki/Test_functions_for_optimization
+    Ackley function, description can be found here: https://en.wikipedia.org/wiki/Test_functions_for_optimization.
     """
     a = 20
     b = 0.2
@@ -39,7 +42,7 @@ def Ackley(x):
 
 class Function:
     """
-    A class that describes a function and its parameters for cubic regularization
+    A class that describes a function and its parameters for cubic regularization.
     """
     def __init__(self, function='bimodal', aux_method="trust_region"):
         self.plot_name = function
@@ -51,9 +54,9 @@ class Function:
             self.grad = lambda x : -(self.grad_sub(x,0)+3*self.grad_sub(x,1))
             self.hess = None
             self.x0 = np.array([1, 0])  # Start at saddle point!
-            self.plot_x_lim = 3
-            self.plot_y_lim = 3
-            self.plot_nb_contours = 24
+            self.plot_x_lim = 1.2
+            self.plot_y_lim = 1.2
+            self.plot_nb_contours = 30
         elif function == 'simple':
             self.f = lambda x: x[0]**2*x[1]**2 + x[0]**2 + x[1]**2
             self.grad = lambda x: np.asarray([2*x[0]*x[1]**2 + 2*x[0], 2*x[0]**2*x[1] + 2*x[1]])
@@ -82,35 +85,37 @@ class Function:
             self.f = lambda x: Ackley(x)
             self.grad = None
             self.hess = None
-            self.x0 = np.array([1.5, 1])
-            self.plot_x_lim = 2
-            self.plot_y_lim = 2
+            self.x0 = np.array([0.5, -0.5])
+            self.plot_x_lim = 1.5
+            self.plot_y_lim = 1.5
             self.plot_nb_contours = 40
         elif function == 'polynomial':
-            self.f = lambda x: n_polynomial(x)
+            self.f = lambda x: polynomial(x)
             self.grad = None
             self.hess = None
-            self.x0 = np.random.uniform(-0.1,0.1,(n,))
+            self.x0 = np.random.uniform(-1,1,(n,))
             self.plot_x_lim = 8
             self.plot_y_lim = 8
             self.plot_nb_contours = 70
             print('A:', A)
+            print('c:', c)
         else:
             raise TypeError('Invalid input type for function initialization')
-        self.cr = src.cubic_reg.CubicRegularization(self.x0, f=self.f, gradient=self.grad, hessian=self.hess, maxiter=10000, conv_tol=1e-8,
+        self.cr = cubic_reg.CubicRegularization(self.x0, f=self.f, gradient=self.grad, hessian=self.hess, maxiter=10000, conv_tol=1e-8,
                                                     L0=1.e-05, aux_method=aux_method, verbose=0, conv_criterion='gradient')
 
     def run(self):
         """
-        Solve the cubic regularization problem
+        Solve the cubic regularization problem.
         """
         x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = self.cr.cubic_reg()
-        print('Value of function:', self.f(x_opt))
+        print('Value of function at argmin:', self.f(x_opt))
         return x_opt, intermediate_points, n_iter
 
     def plot_points(self, intermediate_points):
         """
-        Plot the intermediate steps of cubic regularization
+        Plot the intermediate steps of cubic regularization.
+        :param intermediate_points: Intermediate points of cubic regularization minimization
         """
         points = np.asarray(intermediate_points)
         xlist = np.linspace(-1*self.plot_x_lim, self.plot_x_lim, self.plot_nb_contours)
@@ -121,8 +126,9 @@ class Function:
             for j in range(0, len(X)):
                 Z[i, j] = self.f((X[i, j], Y[i, j]))
         plt.clf()
-        cs = plt.contour(X, Y, Z, self.plot_nb_contours, cmap=plt.cm.magma, alpha=1, extend='both')
-        plt.clabel(cs, cs.levels, inline=True, fontsize=10)
+        cs = plt.contour(X, Y, Z, self.plot_nb_contours, cmap=plt.cm.magma, alpha=0.8, extend='both')
+        # Show contour values.
+        #plt.clabel(cs, cs.levels, inline=True, fontsize=10)
         plt.scatter(points[0, 0], points[0, 1], marker='.', color='#495CD5')
         plt.scatter(points[1:, 0], points[1:, 1], marker='.', color='#5466DE')
         plt.scatter(points[-1, 0], points[-1, 1], marker='*', color='#C4CCFF')
@@ -131,15 +137,15 @@ class Function:
         plt.xlim(-self.plot_x_lim, self.plot_x_lim)
         plt.ylim(-self.plot_y_lim, self.plot_y_lim)
         plt.savefig("figures/cubic_regularization_"+self.plot_name+".png", format="png")
+        plt.show()
 
-
-if __name__ == '__main__':
+def main(function='simple', aux_method='monotone_norm'):
     """
-    Choose a function to run it on, and a method to use for the auxiliary one-dimensional problem
-    Function choices: 'bimodal', 'simple', 'quadratic', 'banana', 'ackley', 'polynomial'
-    Method choices for the auxiliary problem: 'trust_region', 'monotone_norm'
+    Choose a function to run it on, and a method to solve the auxiliary one-dimensional problem
+    :param function: Example functions - 'bimodal', 'simple', 'quadratic', 'banana', 'ackley', 'polynomial'
+    :param aux_method: Method for the auxiliary problem - 'trust_region', 'monotone_norm'
     """
-    bm = Function(function='polynomial', aux_method='monotone_norm')
+    bm = Function(function=function, aux_method=aux_method)
     # Run the algorithm on the function
     x_opt, intermediate_points, n_iter = bm.run()
     print('Argmin of function:', x_opt)

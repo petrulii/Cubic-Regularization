@@ -3,48 +3,95 @@ import src.cubic_reg as utils
 import matplotlib.pyplot as plt
 import time
 from sklearn.metrics import mean_squared_error as mse
+from scipy.optimize import minimize
+from autograd import grad
+import torch
+
+def f_x0(x0):
+    x = np.power(np.ones(n)*x0, np.arange(1,n+1))
+    term2 = 0
+    for i in range(0,n):
+        for j in range(0,n):
+            term2 += (A[i,j]*x[i]*x[j]-c)
+    return term2**2
 
 def f(x):
     n = len(x)
-    result = 0
+    term1 = 0
+    term2 = 0
     for i in range(1,n):
-        result += (x[i]-x[i-1]*x[0])**2
+        term1 += 10*(x[i]-x[i-1]*x[0])**2
     for i in range(0,n):
         for j in range(0,n):
-            result += (A[i,j]*x[i]*x[j]-c)**2
-    return result
+            term2 += (A[i,j]*x[i]*x[j]-c)
+    return 1000*term1+term2**2
+
+def hess_f(x):
+    x_tens = torch.from_numpy(x)
+    hess = torch.autograd.functional.hessian(f,x_tens)
+    return hess.numpy()
+
+def f_terms(x):
+    n = len(x)
+    term1 = 0
+    term2 = 0
+    for i in range(1,n):
+        term1 += (x[i]-x[i-1]*x[0])**2
+    for i in range(0,n):
+        for j in range(0,n):
+            term2 += (A[i,j]*x[i]*x[j]-c)
+    return term1, term2**2
+
+def plot_f(x_min, x_opt, f_x_opt):
+    T = np.arange(-10, 10, 0.05)
+    f_t1 = np.array([f_x0(t) for t in T])
+    plt.figure()
+    plt.axis([-10, 10, -1000, 100000])
+    plt.plot(T, f_t1)
+    plt.scatter(x_min, f_x0(x_min), marker='*')
+    plt.scatter(x_opt[0], f_x_opt, marker='.')
+    plt.scatter(x_opt[0], f_x0(x_opt[0]), marker='+')
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close()
+    plt.show()
+
+def plot_cond(intermediate_hess_cond):
+    k = min(n_iter, 1000)
+    X = np.arange(0, k, 1)
+    plt.figure()
+    plt.plot(X, intermediate_hess_cond[0:k])
+    plt.show()
 
 np.random.seed(0)
 
 # Hyper-parameter of the polynomial
 n = 3
-a = np.random.uniform(-1,1,size=(n,n))
+sample_lim = 10
+a = np.random.uniform(-sample_lim,sample_lim,size=(n,n))
 A = (a + a.T)/2
 A[n-1, n-1] = 0
-c = 2
-print("A:", A)
+c = np.random.uniform(-sample_lim,sample_lim)
+A = np.array([[-0.62169316,0.57449907,5.8095014],[0.57449907,7.49970533,2.57225283],[5.8095014,2.57225283,0.]])
+c = -5.509167256191654
 
-nb_minima = 10
+nb_minima = 3
 minima = np.zeros(nb_minima)
 
 for i in range(nb_minima):
+    res = minimize(f_x0, -10, method='Nelder-Mead', tol=1e-6)
     x0 = np.random.uniform(-10,10,(n,))
-    cr = utils.CubicRegularization(x0, f=f, conv_tol=1e-10, L0=1e-4, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
+    cr = utils.CubicRegularization(x0, f=f, gradient=grad(f), hessian=hess_f, conv_tol=1e-10, L0=1e-4, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
     x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = cr.cubic_reg()
     f_x_opt = f(x_opt)
-    print("Iterations:", n_iter, ", argmin of f:", x_opt, ", i:", i)
+    print("One dimensional problem sol.:", res.x, "f(x):", f_x0(res.x), "\niterations:", n_iter, ", argmin:", x_opt, "\nvalue:", f_x_opt, ", i:", i, ", termsof the objective:", f_terms(x_opt))
+    plot_f(res.x, x_opt, f_x_opt)
     minima[i] = f(x_opt)
 
 print("Local minima:", minima)
 minima = np.around(minima, decimals=1)
 print("\nNumber of local minima found:", len(np.unique(minima)))
 print("Best local minimum:", np.min(minima))
-
-k = min(n_iter, 1000)
-X = np.arange(0, k, 1)
-plt.figure()
-plt.plot(X, intermediate_hess_cond[0:k])
-plt.show()
 
 """
 # Initialize multiple dimensions for experiments
@@ -162,4 +209,28 @@ if m==1:
     plt.axis([-10, 10, 0, 1])
     plt.plot(T, f_t_cubic_1, 'g', T, f_t_cubic_2, 'r', T, f_t_cubic_3, 'y', T, f_t_cubic_4, 'm', T, f_t, 'b')#, T, f_t_first, 'y', T, f_t_second, 'g')
     plt.show()
+"""
+
+""" n = len(x)
+    term1 = 0
+    term2 = 0
+    for i in range(1,n):
+        term1 += (x[i]-x[i-1]*x[0])
+    for i in range(0,n):
+        for j in range(0,n):
+            term2 += (A[i,j]*x[i]*x[j]-c)
+    for i in range(1,n):
+        term1 += (x[i]-x[i-1]*x[0])
+    grad1 = np.zeros(n)
+    grad2 = np.zeros(n)
+    for i in range(1,n):
+        grad1[i] += (1-x[0])
+    grad1 *= 2*term1
+    for i in range(0,n):
+        for j in range(0,n):
+            if j!=i:
+                grad2[i] += A[i,j]*x[j] + A[j,i]*x[j]
+        grad2[i] += 2*A[i,i]*x[i]
+    grad2 *= 2*term2
+    return grad1+grad2
 """

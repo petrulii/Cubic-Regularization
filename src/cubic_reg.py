@@ -15,6 +15,7 @@ References:
   method. SIAM Journal on Optimization, 9(2), 504-525.
 """
 
+from cvxpy import lambda_min
 from scipy.optimize import newton
 import numpy as np
 import scipy.linalg
@@ -209,28 +210,18 @@ class CubicRegularization(Algorithm):
             self.grad_x = self.gradient(x_new)
             self.hess_x = self.hessian(x_new)
             intermediate_hess_cond.append(hess_cond)
+            self.lambda_nplus, lambda_min = self._compute_lambda_nplus()
             self.f_x = self.f(x_new)
             converged = self._check_convergence(x_old, x_new)
             if flag != 0:
                 print(RuntimeWarning('Convergence criteria not met, likely due to round-off error or ill-conditioned '
                                      'Hessian.'))
-                return x_new, intermediate_points, iter, flag
+                return x_new, intermediate_points, iter, flag, intermediate_hess_cond
             intermediate_points.append(x_new)
             iter += 1
         eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
         if not (np.all(eigvals>=0)):
             print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point.'))
-            print("Hessian: \n", self.hess_x)
-            print("Gradient: \n", self.grad_x)
-            print("Eigenvalues: \n", eigvals)
-            print("Eigenvectors: \n", eigvecs)
-            O = np.column_stack(eigvecs)
-            I = np.matmul(O.T,O)
-            I[np.isclose(I, 0)] = 0
-            print("O: \n", O)
-            print("I: \n", I)
-            eta = np.matmul(O,self.grad_x)
-            print("Eta: \n", eta)
         return x_new, intermediate_points, iter, flag, intermediate_hess_cond
 
     def _find_x_new(self, x_old, mk, iter):
@@ -252,12 +243,6 @@ class CubicRegularization(Algorithm):
             aux_problem = _AuxiliaryProblem(x_old, self.grad_x, self.hess_x, mk, self.lambda_nplus, self.kappa_easy,
                                             self.submaxiter, self.aux_method, self.verbose)
             s, flag, hess_cond = aux_problem.solve()
-            """if iter > 5000:
-                s = s*1e4
-            elif iter > 8000:
-                s = s*1e6
-            elif iter > 9000:
-                s = s*1e10"""
             x_new = x_old + s
             cubic_approx = self._cubic_approx(self.f(x_old), s, mk)
             upper_approximation = (cubic_approx >= self.f(x_new))
@@ -347,6 +332,8 @@ class _AuxiliaryProblem:
             """
             See algorithm 7.3.6 in Conn et al. (2000).
             """
+            # Hessian condition number not calculated
+            hess_cond = -1
             # Function to compute H(x)+lambda*I as function of lambda
             self.H_lambda = lambda lambduh: self.hess_x + lambduh*np.identity(np.size(self.hess_x, 0))
             # Constant to add to lambda_nplus so that you're not at the zero where the eigenvalue is
@@ -357,18 +344,18 @@ class _AuxiliaryProblem:
                 lambduh = self.lambda_nplus + self.lambda_const
             s, L, flag = self._compute_s(lambduh)
             if flag != 0:
-                return s, flag
+                return s, flag, hess_cond
             r = 2*lambduh/self.M
             if np.linalg.norm(s) <= r:
                 if lambduh == 0 or np.linalg.norm(s) == r:
-                    return s, 0
+                    return s, 0, hess_cond
                 else:
                     Lambda, U = np.linalg.eigh(self.H_lambda(self.lambda_nplus))
                     s_cri = -U.dot(np.linalg.pinv(np.diag(Lambda))).dot(U.T).dot(self.grad_x)
                     alpha = max(np.roots([np.dot(U[:, 0], U[:, 0]),
                                         2*np.dot(U[:, 0], s_cri), np.dot(s_cri, s_cri)-4*self.lambda_nplus**2/self.M**2]))
                     s = s_cri + alpha*U[:, 0]
-                    return s, 0
+                    return s, 0, hess_cond
             if lambduh == 0:
                 lambduh += self.lambda_const
             iter = 0
@@ -377,10 +364,9 @@ class _AuxiliaryProblem:
                 lambduh = self._update_lambda(lambduh, s, L)
                 s, L, flag = self._compute_s(lambduh)
                 if flag != 0:
-                    return s, flag
+                    return s, flag, hess_cond
                 if iter == self.maxiter:
                     print(RuntimeWarning('Warning: Could not compute s: maximum number of iterations reached'))
-            hess_cond = -1
         elif self.method == "monotone_norm":
             """
             Newton on a monotone function.
@@ -390,6 +376,7 @@ class _AuxiliaryProblem:
                 eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
                 eigvals_min = eigvals[0]
                 eigvals = np.where(eigvals<=0, 1.0e-08, eigvals)
+                # Calculating hessian condition number for plotting
                 hess_cond = eigvals[-1]/eigvals[0]
                 #print("Eigenvalues :", eigvals)
             except:

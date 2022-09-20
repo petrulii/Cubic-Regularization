@@ -2,7 +2,6 @@ import numpy as np
 import cubic_reg
 import matplotlib.pyplot as plt
 import time
-#from scipy.optimize import minimize
 
 def f(x):
     """
@@ -53,13 +52,11 @@ for i in range(nb_experiments):
         n = N[j]
         # Initial point for cubic regularization
         x0 = np.random.randint(-10,10,size=(n,))
-        # Hyper-parameters for the quadratic objective
+        # Parameters for the quadratic objective
         a = np.random.randint(-10,10,size=(n,n))
         A = (a + a.T)/2
         A[n-1, n-1] = 0
         c = np.random.uniform(-10,10)
-        # Solution to the one-dimensional form of the qudratic objective
-        # res = minimize(f_one_dimensional, x0[0], method='Nelder-Mead', tol=1e-6)
 
         start_time = time.time()
         cr = cubic_reg.CubicRegularization(x0, f=f, conv_tol=1e-8, L0=1.e-05, aux_method="trust_region", verbose=0, conv_criterion='gradient')

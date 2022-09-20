@@ -1,5 +1,5 @@
 import numpy as np
-import src.cubic_reg as utils
+import cubic_reg
 import matplotlib.pyplot as plt
 import time
 from sklearn.metrics import mean_squared_error as mse
@@ -75,13 +75,13 @@ c = np.random.uniform(-sample_lim,sample_lim)
 A = np.array([[-0.62169316,0.57449907,5.8095014],[0.57449907,7.49970533,2.57225283],[5.8095014,2.57225283,0.]])
 c = -5.509167256191654
 
-nb_minima = 3
+nb_minima = 1
 minima = np.zeros(nb_minima)
 
 for i in range(nb_minima):
     res = minimize(f_x0, -10, method='Nelder-Mead', tol=1e-6)
     x0 = np.random.uniform(-10,10,(n,))
-    cr = utils.CubicRegularization(x0, f=f, gradient=grad(f), hessian=hess_f, conv_tol=1e-10, L0=1e-4, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
+    cr = cubic_reg.CubicRegularization(x0, f=f, gradient=grad(f), hessian=hess_f, conv_tol=1e-10, L0=1e-4, aux_method="monotone_norm", verbose=0, conv_criterion='gradient', maxiter=10000)
     x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = cr.cubic_reg()
     f_x_opt = f(x_opt)
     print("One dimensional problem sol.:", res.x, "f(x):", f_x0(res.x), "\niterations:", n_iter, ", argmin:", x_opt, "\nvalue:", f_x_opt, ", i:", i, ", termsof the objective:", f_terms(x_opt))

@@ -4,12 +4,6 @@ import matplotlib.pyplot as plt
 import time
 from sklearn.metrics import mean_squared_error as mse
 
-# TODO
-# in monotone_norm when eta is 0 (saddle point)
-# when computing the starting point, remove the eigenvalues at i where eta[i] is 0
-# higher dimensions
-# condition matrices max/min
-
 def sigmoid(x):
     """ Sigmoid function. """
     return 1./(1+np.exp(-x))
@@ -23,31 +17,6 @@ def generate_data(nb_samples, nb_features, sigma=1, density=1):
     # Generate observations.
     y = sigmoid(np.matmul(x,theta))
     return x, y, theta
-
-def CheckGrad(f,gradf,x0):
-    """ Check the gradient using finite differences. """
-    d=np.random.rand(x0.shape[0])
-    epst = 1e-6
-    g       = gradf(x0)
-    vplus   = f(x0+epst*d)
-    vminus  = f(x0-epst*d)
-    # Directional derivative at x0 in direction d
-    print("Analytic gradient in direction d: ", np.dot(d,g))
-    # Finite differences test
-    print("Finite differences test in dir d: ", (vplus-vminus)/(2*epst))
-
-def CheckHess(f,Hessf,x0):
-    """ Check the Hessian using finite differences. """
-    d=np.random.rand(x0.shape[0])
-    epst = 1e-4
-    val     = f(x0)
-    vplus   = f(x0+epst*d)
-    vminus  = f(x0-epst*d)
-    H = Hessf(x0)
-    # Directional second derivative at x0 in direction d
-    print("Second derivative in direction d  : ", np.dot(H@d,d))
-    # Finite differences test
-    print("Finite differences second der test: ", (vplus+vminus-2*val)/(epst**2))
 
 # To be able to replicate simulations.
 np.random.seed(1)

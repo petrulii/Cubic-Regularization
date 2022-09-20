@@ -56,7 +56,7 @@ class Function:
             self.x0 = np.array([1, 0])  # Start at saddle point!
             self.plot_x_lim = 1.2
             self.plot_y_lim = 1.2
-            self.plot_nb_contours = 30
+            self.plot_nb_contours = 80
         elif function == 'simple':
             self.f = lambda x: x[0]**2*x[1]**2 + x[0]**2 + x[1]**2
             self.grad = lambda x: np.asarray([2*x[0]*x[1]**2 + 2*x[0], 2*x[0]**2*x[1] + 2*x[1]])
@@ -64,7 +64,7 @@ class Function:
             self.x0 = np.array([1, 2])
             self.plot_x_lim = 5
             self.plot_y_lim = 5
-            self.plot_nb_contours = 15
+            self.plot_nb_contours = 80
         elif function == 'quadratic':
             self.f = lambda x: x[0]**2+x[1]**2
             self.grad = lambda x: np.asarray([2*x[0], 2*x[1]])
@@ -72,15 +72,15 @@ class Function:
             self.x0 = np.array([2, 2])
             self.plot_x_lim = 4
             self.plot_y_lim = 4
-            self.plot_nb_contours = 20
+            self.plot_nb_contours = 80
         elif function == 'banana':
             self.f = lambda x: banana_f(x)
             self.grad = lambda x: banana_grad(x)
             self.hess = lambda x: banana_hess(x)
             self.x0 = np.array([3, -3])
             self.plot_x_lim = 3.5
-            self.plot_y_lim = 15
-            self.plot_nb_contours = 80
+            self.plot_y_lim = 9
+            self.plot_nb_contours = 280
         elif function == 'ackley':
             self.f = lambda x: Ackley(x)
             self.grad = None
@@ -88,7 +88,7 @@ class Function:
             self.x0 = np.array([0.5, -0.5])
             self.plot_x_lim = 1.5
             self.plot_y_lim = 1.5
-            self.plot_nb_contours = 40
+            self.plot_nb_contours = 80
         elif function == 'polynomial':
             self.f = lambda x: polynomial(x)
             self.grad = None
@@ -96,7 +96,7 @@ class Function:
             self.x0 = np.random.uniform(-1,1,(n,))
             self.plot_x_lim = 8
             self.plot_y_lim = 8
-            self.plot_nb_contours = 70
+            self.plot_nb_contours = 80
             print('A:', A)
             print('c:', c)
         else:
@@ -131,7 +131,7 @@ class Function:
         #plt.clabel(cs, cs.levels, inline=True, fontsize=10)
         plt.scatter(points[0, 0], points[0, 1], marker='.', color='#495CD5')
         plt.scatter(points[1:, 0], points[1:, 1], marker='.', color='#5466DE')
-        plt.scatter(points[-1, 0], points[-1, 1], marker='*', color='#C4CCFF')
+        plt.scatter(points[-1, 0], points[-1, 1], marker='*', color='r')
         plt.xlabel('x')
         plt.ylabel('y')
         plt.xlim(-self.plot_x_lim, self.plot_x_lim)

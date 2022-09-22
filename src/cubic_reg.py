@@ -221,7 +221,7 @@ class CubicRegularization(Algorithm):
             iter += 1
         eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
         if not (np.all(eigvals>=0)):
-            print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point.'))
+            print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point or gradient very small.'))
         return x_new, intermediate_points, iter, flag, intermediate_hess_cond
 
     def _find_x_new(self, x_old, mk, iter):
@@ -365,8 +365,8 @@ class _AuxiliaryProblem:
                 s, L, flag = self._compute_s(lambduh)
                 if flag != 0:
                     return s, flag, hess_cond
-                if iter == self.maxiter:
-                    print(RuntimeWarning('Warning: Could not compute s: maximum number of iterations reached'))
+                #if iter == self.maxiter:
+                #    print(RuntimeWarning('Warning: Could not compute s: maximum number of iterations reached'))
         elif self.method == "monotone_norm":
             """
             Newton on a monotone function.
@@ -401,7 +401,7 @@ class _AuxiliaryProblem:
                 #fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
                 # Initial guess for Newton's method.
                 x0 = max((-1*np.min(eigvals))/(3*self.M)+1.0e-04,1.0e-04)
-                (v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=self.maxiter, full_output=True, tol=1.48e-6)
+                (v, r) = newton(f, x0, args=(eta, eigvals, self.M/6), maxiter=self.maxiter, full_output=True, tol=1.48e-6)
                 if self.verbose == 1:
                     print("Newton root :", r.root)
                     print("Newton iterations :", r.iterations)

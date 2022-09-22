@@ -5,29 +5,6 @@ from scipy.optimize import rosen as banana_f
 from scipy.optimize import rosen_der as banana_grad
 from scipy.optimize import rosen_hess as banana_hess
 
-# Global variables for the quadratic objective
-global n
-n = 2
-a = np.random.uniform(-10,10,size=(n,n))
-global A
-A = (a + a.T)/2
-global c
-c = np.random.uniform(-10,10)
-
-def polynomial(x):
-    """
-    A quadratic objective with quadratic constraints.
-    """
-    n = len(x)
-    term1 = 0
-    term2 = 0
-    for i in range(1,n):
-        term1 += (x[i]-x[i-1]*x[0])**2
-    for i in range(0,n):
-        for j in range(0,n):
-            term2 += (A[i,j]*x[i]*x[j]-c)**2
-    return term1+term2**2
-
 def Ackley(x):
     """
     Ackley function, description can be found here: https://en.wikipedia.org/wiki/Test_functions_for_optimization.
@@ -90,15 +67,17 @@ class Function:
             self.plot_y_lim = 1.5
             self.plot_nb_contours = 80
         elif function == 'polynomial':
-            self.f = lambda x: polynomial(x)
+            n = 2
+            a = np.random.uniform(-1,1,size=(n,n))
+            A = (a + a.T)/2
+            c = np.random.uniform(-10,10)
+            self.f = lambda x: (x[1]-x[0]*x[0])**2+(A[0,0]*x[0]*x[0]-c)**2+(A[0,1]*x[0]*x[1]-c)**2+(A[1,0]*x[1]*x[0]-c)**2+(A[1,1]*x[1]*x[1]-c)**2
             self.grad = None
             self.hess = None
-            self.x0 = np.random.uniform(-1,1,(n,))
+            self.x0 = np.random.uniform(-10,10,(n,))
             self.plot_x_lim = 8
             self.plot_y_lim = 8
             self.plot_nb_contours = 80
-            print('A:', A)
-            print('c:', c)
         else:
             raise TypeError('Invalid input type for function initialization')
         self.cr = cubic_reg.CubicRegularization(self.x0, f=self.f, gradient=self.grad, hessian=self.hess, maxiter=10000, conv_tol=1e-8,

@@ -1,8 +1,6 @@
-This code is based on the work of Corinne Jones that can be found here : https://github.com/cjones6
+This code is based on the work of Corinne Jones that can be found here : https://github.com/cjones6,
+implemented by Ieva Petrulionyte with guidance from Anatoli Juditsky as part of a research internship.
 
-To run cubic regularization with different convex and non-convex functions:
+To run cubic regularization example with different 2D convex and non-convex functions:
 - add a function or choose one of the existing ones in the Function class in example.py
 - run example.py
-
-To perform unit tests:
-- idk

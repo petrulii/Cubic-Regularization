@@ -19,8 +19,8 @@ def test_aux_methods(nb_experiments=10, high_dim=9):
     fig_name = "aux_methods"
     time_tr = np.zeros((nb_N, nb_experiments))
     time_mn = np.zeros((nb_N, nb_experiments))
-    estim_error_tr = np.zeros((nb_N, nb_experiments))
-    estim_error_mn = np.zeros((nb_N, nb_experiments))
+    glob_min_tr = np.zeros((nb_N, nb_experiments))
+    glob_min_mn = np.zeros((nb_N, nb_experiments))
     iters_tr = np.zeros((nb_N, nb_experiments))
     iters_mn = np.zeros((nb_N, nb_experiments))
 
@@ -40,56 +40,74 @@ def test_aux_methods(nb_experiments=10, high_dim=9):
             start_time = time.time()
             # Initial point for cubic regularization
             x0 = np.random.randint(-10,10,size=(n,))
-            cr = cubic_reg.CubicRegularization(x0, f=f, conv_tol=1e-8, L0=1.e-05, aux_method="trust_region", verbose=0, conv_criterion='gradient')
+            cr = cubic_reg.CubicRegularization(x0, f=f, conv_tol=1e-10, L0=1.e-05, aux_method="trust_region", verbose=0, conv_criterion='gradient')
             x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = cr.cubic_reg()
-            #print("\nTrust region\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
-            #print("Argmin of f: ", x_opt)
-            time_tr[i,j] = time.time() - start_time
-            estim_error_tr[i,j] = 1 if np.isclose(f(x_opt),0) else 0
-            iters_tr[i,j] = n_iter
+            if np.isclose(f(x_opt),0):
+                iters_tr[i,j] = n_iter
+                time_tr[i,j] = time.time() - start_time
+                glob_min_tr[i,j] = 1
+            else:
+                iters_tr[i,j] = -1
+                time_tr[i,j] = -1
+                glob_min_tr[i,j] = 0
+            #print("Trust region\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
+            #print("Argmin of f: ", x_opt, ".\n")
 
             start_time = time.time()
-            cr = cubic_reg.CubicRegularization(x0, f=f, conv_tol=1e-8, L0=1.e-05, aux_method="monotone_norm", verbose=0, conv_criterion='gradient')
+            cr = cubic_reg.CubicRegularization(x0, f=f, conv_tol=1e-10, L0=1.e-05, aux_method="monotone_norm", verbose=0, conv_criterion='gradient')
             x_opt, intermediate_points, n_iter, flag, intermediate_hess_cond = cr.cubic_reg()
-            #print("\nMonotone norm\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
-            #print("Argmin of f: ", x_opt)
-            time_mn[i,j] = time.time() - start_time
-            estim_error_mn[i,j] = 1 if np.isclose(f(x_opt),0) else 0
-            iters_mn[i,j] = n_iter
+            if np.isclose(f(x_opt),0):
+                iters_mn[i,j] = n_iter
+                time_mn[i,j] = time.time() - start_time
+            else:
+                iters_mn[i,j] = -1
+                time_mn[i,j] = -1
+                glob_min_mn[i,j] = 0
+            glob_min_mn[i,j] = 1 if np.isclose(f(x_opt),0) else 0
+            #print("Monotone norm\n", "Iterations:", n_iter, ", time:", time.time() - start_time, ", f_opt:", f(x_opt))
+            #print("Argmin of f: ", x_opt, ".\n")
+        time_tr[i][time_tr[i] == -1] = np.max(time_tr[i])
+        time_mn[i][time_mn[i] == -1] = np.max(time_mn[i])
+        iters_tr[i][iters_tr[i] == -1] = np.max(iters_tr[i])
+        iters_mn[i][iters_mn[i] == -1] = np.max(iters_mn[i])
 
     time_tr = np.average(time_tr, axis=1)
     time_mn = np.average(time_mn, axis=1)
-    estim_error_tr = np.average(estim_error_tr, axis=1)
-    estim_error_mn = np.average(estim_error_mn, axis=1)
+    glob_min_tr = np.average(glob_min_tr, axis=1)
+    glob_min_mn = np.average(glob_min_mn, axis=1)
     iters_tr = np.average(iters_tr, axis=1)
     iters_mn = np.average(iters_mn, axis=1)
 
-    fig0, ax0 = plt.subplots()
-    ax0.plot(N, time_tr, label="Trust region")
-    ax0.plot(N, time_mn, label="Monotone norm")
-    ax0.set_xlabel('dimension $k$')
-    ax0.set_ylabel('time (s)')
-    ax0.legend(loc='best')
-    ax0.set_title("Time taken with increasing $k$")
+    plt.figure()
+    plt.xticks(N)
+    plt.scatter(N, time_tr, label="Trust region")
+    plt.scatter(N, time_mn, label="Monotone norm", marker='*')
+    plt.xlabel('dimension $k$')
+    plt.ylabel('time (s)')
+    plt.legend(loc='best')
+    plt.title("Time taken with increasing $k$")
     plt.savefig("figures/time_"+fig_name+".png", format="png")
     plt.show()
 
-    fig1, ax1 = plt.subplots()
-    ax1.plot(N, estim_error_tr, label="Trust region")
-    ax1.plot(N, estim_error_mn, label="Monotone norm")
-    ax0.set_xlabel('dimension $k$')
-    ax1.set_ylabel('success score')
-    ax1.legend(loc='best')
-    ax1.set_title("How often the global minimum is found")
+    plt.figure()
+    plt.xticks(N)
+    plt.scatter(N, glob_min_tr, label="Trust region")
+    plt.scatter(N, glob_min_mn, label="Monotone norm", marker='*')
+    plt.xlabel('dimension $k$')
+    plt.ylim(0,1)
+    plt.ylabel('success score')
+    plt.legend(loc='best')
+    plt.title("How often the global minimum is found")
     plt.savefig("figures/value_"+fig_name+".png", format="png")
     plt.show()
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(N, iters_tr, label="Trust region")
-    ax2.plot(N, iters_mn, label="Monotone norm")
-    ax0.set_xlabel('dimension $k$')
-    ax2.set_ylabel('iterations')
-    ax2.legend(loc='best')
-    ax0.set_title("Iterations with increasing $k$")
+    plt.figure()
+    plt.xticks(N)
+    plt.scatter(N, iters_tr, label="Trust region")
+    plt.scatter(N, iters_mn, label="Monotone norm", marker='*')
+    plt.xlabel('dimension $k$')
+    plt.ylabel('iterations')
+    plt.legend(loc='best')
+    plt.title("Iterations with increasing $k$")
     plt.savefig("figures/iterations_"+fig_name+".png", format="png")
     plt.show()

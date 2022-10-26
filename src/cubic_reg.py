@@ -19,6 +19,7 @@ from cvxpy import lambda_min
 from scipy.optimize import newton
 import numpy as np
 import scipy.linalg
+import matplotlib.pyplot as plt
 
 
 class Algorithm:
@@ -204,9 +205,11 @@ class CubicRegularization(Algorithm):
         mk = self.L0
         intermediate_points = [x_new]
         intermediate_hess_cond = []
+        MK = []
         while iter < self.maxiter and converged is False:
             x_old = x_new.copy()
             x_new, mk, flag, hess_cond = self._find_x_new(x_old, mk, iter)
+            MK.append(np.linalg.norm(self.grad_x))#np.linalg.norm(x_old-x_new))
             self.grad_x = self.gradient(x_new)
             self.hess_x = self.hessian(x_new)
             intermediate_hess_cond.append(hess_cond)
@@ -222,6 +225,11 @@ class CubicRegularization(Algorithm):
         eigvals, eigvecs = scipy.linalg.eigh(self.hess_x)
         if not (np.all(eigvals>=0)):
             print(RuntimeWarning('Did not converge to a local minimum, likely a saddle point or gradient very small.'))
+        #print("avg(MK) =", "{:e}".format(np.average(MK)))
+        #x_mk = np.arange(0, iter)
+        #plt.plot(x_mk, MK)
+        #plt.yscale("log")
+        #plt.show()
         return x_new, intermediate_points, iter, flag, intermediate_hess_cond
 
     def _find_x_new(self, x_old, mk, iter):
@@ -401,7 +409,16 @@ class _AuxiliaryProblem:
                 #fder = lambda x, et, l, mu: np.sum((-3*mu*np.sqrt((et*et)/((l+3*mu*x)*(l+3*mu*x))))/(l+3*mu*x))-1
                 # Initial guess for Newton's method.
                 x0 = max((-1*np.min(eigvals))/(3*self.M)+1.0e-04,1.0e-04)
-                (v, r) = newton(f, x0, args=(eta, eigvals, self.M/6), maxiter=self.maxiter, full_output=True, tol=1.48e-6)
+                (v, r) = newton(f, x0, args=(eta, eigvals, self.M), maxiter=self.maxiter, full_output=True, tol=1.48e-8)
+                """
+                print("Newton root :", r.root)
+                print("Newton func value :", f(r.root, eta, eigvals, self.M))
+                T = np.arange(0,0.2,0.001)
+                f_T = [f(t, eta, eigvals, self.M) for t in T]
+                plt.plot(T, f_T)
+                plt.scatter(r.root, f(r.root, eta, eigvals, self.M))
+                plt.show()
+                """
                 if self.verbose == 1:
                     print("Newton root :", r.root)
                     print("Newton iterations :", r.iterations)

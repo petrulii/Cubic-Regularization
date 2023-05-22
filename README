@@ -1,6 +1,14 @@
 This code is based on the work of Corinne Jones that can be found here : https://github.com/cjones6,
 implemented by Ieva Petrulionyte with guidance from Anatoli Juditsky as part of a research internship.
 
+Dependencies:
+matplotlib      https://matplotlib.org/3.5.3/index.html
+numpy           https://numpy.org/install/
+scipy           https://scipy.org/install/
+cvxpy           https://www.cvxpy.org/install/
+autograd        https://autograd.readthedocs.io/en/latest/installation.html
+pytorch         https://pytorch.org/get-started/locally/
+
 To run cubic regularization example with different 2D convex and non-convex functions:
 - add a function or choose one of the existing ones in the Function class in example.py
 - run example.py
